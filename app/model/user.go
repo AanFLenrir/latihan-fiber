@@ -7,6 +7,7 @@ type User struct {
     Username  string    `json:"username"` 
     Email     string    `json:"email"` 
     Password  string    `json:"-"` 
+    Role      string    `json:"role"` // BARU DITAMBAHKAN
     IsActive  bool      `json:"is_active"` 
     CreatedAt time.Time `json:"created_at"` 
 } 
@@ -21,7 +22,7 @@ type CreateUserRequest struct {
 // PUT — ganti seluruh isi, jadi field bertipe biasa dan semuanya wajib 
 type ReplaceUserRequest struct { 
     Username string `json:"username"` 
- Email    string `json:"email"` 
+    Email    string `json:"email"` 
     IsActive bool   `json:"is_active"` 
 } 
   
@@ -57,6 +58,7 @@ type ListQuery struct {
     Order    string 
     IsActive *bool 
 }
+
 // Offset menghitung berapa baris yang dilewati untuk halaman ini. 
 // Perhitungan ini pindah ke sini karena kini dipakai langsung oleh SQL. 
 func (q ListQuery) Offset() int { 
