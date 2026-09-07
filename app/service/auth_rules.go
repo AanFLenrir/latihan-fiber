@@ -32,6 +32,7 @@ func ValidateRegister(req model.RegisterRequest) map[string]string {
 	return errs
 }
 
+// ValidateLogin hanya memeriksa kelengkapan, BUKAN kekuatan password.
 func ValidateLogin(req model.LoginRequest) map[string]string {
 	errs := map[string]string{}
 	if strings.TrimSpace(req.Username) == "" {
@@ -80,9 +81,4 @@ func isValidUsername(username string) bool {
 		}
 	}
 	return true
-}
-
-// Fungsi tambahan untuk melengkapi pemanggilan isValidEmail di ValidateRegister
-func isValidEmail(email string) bool {
-	return strings.Contains(email, "@") && strings.Contains(email, ".")
 }

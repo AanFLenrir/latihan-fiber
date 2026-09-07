@@ -4,52 +4,37 @@ import (
 	"log/slog"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"latihan-fiber/app/service"
 	"latihan-fiber/helper"
 	"latihan-fiber/middleware"
 	"latihan-fiber/route"
 )
 
-// NewApp merakit aplikasi: membuat instance Fiber, memasang middleware,
-// lalu mendaftarkan route. File ini adalah tempat seluruh bagian bertemu.
-func NewApp(
-	logger *slog.Logger, pool *pgxpool.Pool, userService *service.UserService,
-) *fiber.App {
+func NewApp(logger *slog.Logger, deps route.Dependencies) *fiber.App {
 	app := fiber.New(fiber.Config{
 		AppName:      GetEnv("APP_NAME", "Praktikum Backend Lanjut"),
 		ErrorHandler: newErrorHandler(logger),
+		// Membatasi ukuran body mencegah satu request besar menghabiskan memori server
+		BodyLimit:    1 * 1024 * 1024, // 1 MB
 	})
 
-	middleware.Register(app, logger)
-	route.Register(app, pool, userService)
+	// Panggil middleware.Register dengan allowedOrigins dari .env
+	middleware.Register(app, logger, GetEnv("ALLOWED_ORIGINS", ""))
 
-	// Penampung terakhir untuk URL yang tidak dikenal.
-	app.Use(func(c *fiber.Ctx) error {
-		return helper.Fail(c, fiber.StatusNotFound, "endpoint tidak ditemukan")
-	})
+	route.Register(app, deps)
 
 	return app
 }
 
-// newErrorHandler adalah jaring pengaman terakhir: error yang tidak
-// tertangani di service berakhir di sini dengan format yang tetap konsisten.
 func newErrorHandler(logger *slog.Logger) fiber.ErrorHandler {
 	return func(c *fiber.Ctx, err error) error {
-		status := fiber.StatusInternalServerError
-		message := "terjadi error pada server"
-
+		code := fiber.StatusInternalServerError
 		if e, ok := err.(*fiber.Error); ok {
-			status = e.Code
-			message = e.Message
+			code = e.Code
 		}
-
-		logger.Error("unhandled_error",
-			slog.String("path", c.Path()),
-			slog.Int("status", status),
+		logger.Error("terjadi panic atau error tidak tertangani",
 			slog.String("error", err.Error()),
+			slog.String("path", c.Path()),
 		)
-
-		return helper.Fail(c, status, message)
+		return helper.Fail(c, code, "terjadi kesalahan pada server")
 	}
 }
