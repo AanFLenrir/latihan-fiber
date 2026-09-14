@@ -1,5 +1,5 @@
 package model
-  
+
 import "time" 
   
 type User struct { 
@@ -7,7 +7,7 @@ type User struct {
     Username  string    `json:"username"` 
     Email     string    `json:"email"` 
     Password  string    `json:"-"` 
-    Role      string    `json:"role"` // BARU DITAMBAHKAN
+    Role      string    `json:"role"` 
     IsActive  bool      `json:"is_active"` 
     CreatedAt time.Time `json:"created_at"` 
 } 
@@ -60,7 +60,11 @@ type ListQuery struct {
 }
 
 // Offset menghitung berapa baris yang dilewati untuk halaman ini. 
-// Perhitungan ini pindah ke sini karena kini dipakai langsung oleh SQL. 
 func (q ListQuery) Offset() int { 
     return (q.Page - 1) * q.Limit 
+}
+
+// BARU DITAMBAHKAN: AssignRoleRequest dipakai endpoint PATCH /users/:id/role.
+type AssignRoleRequest struct {
+	Role string `json:"role"`
 }

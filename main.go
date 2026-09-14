@@ -50,18 +50,34 @@ func main() {
 	// 4. Perakitan dari dalam ke luar: repository -> service
 	userRepository := repository.NewUserRepository(pool)
 	tokenRepository := repository.NewTokenRepository(pool)
+	
+	// Tambahan Langkah 4: Inisialisasi RoleRepository
+	roleRepository := repository.NewRoleRepository(pool)
 
-	userService := service.NewUserService(userRepository)
+	// Pemetaan role ke permission dibaca SEKALI saat aplikasi menyala.
+	// Konsekuensinya: perubahan hak akses di database baru berlaku setelah
+	// aplikasi dijalankan ulang. Itu keputusan sadar, bukan kelalaian.
+	rawPermissions, err := roleRepository.LoadPermissions(context.Background())
+	if err != nil {
+		logger.Error("gagal memuat permission", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	permissions := helper.NewPermissionSet(rawPermissions)
+	logger.Info("permission dimuat", slog.Any("roles", permissions.KnownRoles()))
+
+	// Update parameter service dengan memasukkan 'permissions'
+	userService := service.NewUserService(userRepository, permissions)
 	authService := service.NewAuthService(
-		userRepository, tokenRepository, jwtManager,
+		userRepository, tokenRepository, jwtManager, permissions,
 		time.Duration(config.GetEnvInt("JWT_REFRESH_TTL_DAYS", 7))*24*time.Hour,
 	)
 
 	// 5. Aplikasi
-	// config.NewApp sekarang menerima route.Dependencies
+	// config.NewApp sekarang menerima route.Dependencies dengan Permissions
 	app := config.NewApp(logger, route.Dependencies{
 		Pool:        pool,
 		JWT:         jwtManager,
+		Permissions: permissions, // Tambahan baru
 		UserService: userService,
 		AuthService: authService,
 	})
