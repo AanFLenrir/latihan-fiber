@@ -45,19 +45,20 @@ func (s *AuthService) Register(c *fiber.Ctx) error {
 
 	var req model.RegisterRequest
 	if err := c.BodyParser(&req); err != nil {
-		return helper.Fail(c, fiber.StatusBadRequest, "body harus berupa JSON yang valid")
+		return helper.BadRequest("body harus berupa JSON yang valid")
 	}
 
 	req.Username = strings.TrimSpace(req.Username)
 	req.Email = strings.TrimSpace(req.Email)
 
-	if errs := ValidateRegister(req); len(errs) > 0 {
-		return helper.FailValidation(c, errs)
+	// DIUBAH: Memakai validasi deklaratif (tag), bukan ValidateRegister manual
+	if errs := helper.ValidateStruct(req); errs != nil {
+		return helper.Validation(errs)
 	}
 
 	hashed, err := helper.HashPassword(req.Password)
 	if err != nil {
-		return helper.Fail(c, fiber.StatusInternalServerError, "gagal memproses password")
+		return helper.Internal(err) // Jangan bocorkan detail ke client
 	}
 
 	created, err := s.users.Create(ctx, model.User{
@@ -70,13 +71,18 @@ func (s *AuthService) Register(c *fiber.Ctx) error {
 
 	if err != nil {
 		if errors.Is(err, repository.ErrDuplicate) {
-			return helper.Fail(c, fiber.StatusConflict, "username sudah dipakai")
+			return helper.Conflict("username sudah dipakai")
 		}
-		return helper.Fail(c, fiber.StatusInternalServerError, "gagal mendaftarkan user")
+		return helper.Internal(err)
 	}
 
-	return helper.Created(c, "pendaftaran berhasil", created,
-		"/api/v1/users/"+strconv.Itoa(created.ID))
+	// Untuk HTTP Created (201) kita sertakan header Location
+	c.Set(fiber.HeaderLocation, "/api/v1/users/"+strconv.Itoa(created.ID))
+	return c.Status(fiber.StatusCreated).JSON(model.WebResponse{
+		Success: true,
+		Message: "pendaftaran berhasil",
+		Data:    created,
+	})
 }
 
 func (s *AuthService) Login(c *fiber.Ctx) error {
@@ -85,33 +91,38 @@ func (s *AuthService) Login(c *fiber.Ctx) error {
 
 	var req model.LoginRequest
 	if err := c.BodyParser(&req); err != nil {
-		return helper.Fail(c, fiber.StatusBadRequest, "body harus berupa JSON yang valid")
+		return helper.BadRequest("body harus berupa JSON yang valid")
 	}
 
-	if errs := ValidateLogin(req); len(errs) > 0 {
-		return helper.FailValidation(c, errs)
+	// DIUBAH: Memakai validasi deklaratif (tag)
+	if errs := helper.ValidateStruct(req); errs != nil {
+		return helper.Validation(errs)
 	}
 
 	user, err := s.users.FindByUsername(ctx, strings.TrimSpace(req.Username))
 	if err != nil {
 		helper.VerifyDummyPassword(req.Password)
-		return helper.Fail(c, fiber.StatusUnauthorized, "username atau password salah")
+		return helper.Unauthorized("username atau password salah")
 	}
 
 	if !helper.VerifyPassword(user.Password, req.Password) {
-		return helper.Fail(c, fiber.StatusUnauthorized, "username atau password salah")
+		return helper.Unauthorized("username atau password salah")
 	}
 	if !user.IsActive {
-		return helper.Fail(c, fiber.StatusForbidden, "akun dinonaktifkan")
+		return helper.Forbidden("akun dinonaktifkan")
 	}
 
 	pair, err := s.issueTokenPair(ctx, user)
 	if err != nil {
-		// DIUBAH: Menambahkan err.Error() agar pesan error aslinya terlihat di Thunder Client
-		return helper.Fail(c, fiber.StatusInternalServerError, "gagal membuat token: "+err.Error())
+		// Menggunakan helper.Internal agar dicatat di log
+		return helper.Internal(err)
 	}
 
-	return helper.Success(c, fiber.StatusOK, "login berhasil", pair)
+	return c.Status(fiber.StatusOK).JSON(model.WebResponse{
+		Success: true,
+		Message: "login berhasil",
+		Data:    pair,
+	})
 }
 
 func (s *AuthService) Refresh(c *fiber.Ctx) error {
@@ -120,36 +131,39 @@ func (s *AuthService) Refresh(c *fiber.Ctx) error {
 
 	var req model.RefreshRequest
 	if err := c.BodyParser(&req); err != nil {
-		return helper.Fail(c, fiber.StatusBadRequest, "body harus berupa JSON yang valid")
+		return helper.BadRequest("body harus berupa JSON yang valid")
 	}
 
-	if strings.TrimSpace(req.RefreshToken) == "" {
-		return helper.Fail(c, fiber.StatusBadRequest, "refresh_token wajib diisi")
+	// DIUBAH: Memakai validasi deklaratif (tag)
+	if errs := helper.ValidateStruct(req); errs != nil {
+		return helper.Validation(errs)
 	}
 
 	hash := helper.SHA256Hex(req.RefreshToken)
 	stored, err := s.tokens.FindActive(ctx, hash)
 	if err != nil {
-		return helper.Fail(c, fiber.StatusUnauthorized,
-			"refresh token tidak valid atau sudah kedaluwarsa")
+		return helper.Unauthorized("refresh token tidak valid atau sudah kedaluwarsa")
 	}
 
 	user, err := s.users.FindByID(ctx, stored.UserID)
 	if err != nil || !user.IsActive {
-		return helper.Fail(c, fiber.StatusUnauthorized, "akun tidak dapat dipakai")
+		return helper.Unauthorized("akun tidak dapat dipakai")
 	}
 
 	if err := s.tokens.Revoke(ctx, hash); err != nil {
-		return helper.Fail(c, fiber.StatusInternalServerError, "gagal memperbarui token")
+		return helper.Internal(err)
 	}
 
 	pair, err := s.issueTokenPair(ctx, user)
 	if err != nil {
-		// DIUBAH: Menambahkan err.Error()
-		return helper.Fail(c, fiber.StatusInternalServerError, "gagal membuat token: "+err.Error())
+		return helper.Internal(err)
 	}
 
-	return helper.Success(c, fiber.StatusOK, "token berhasil diperbarui", pair)
+	return c.Status(fiber.StatusOK).JSON(model.WebResponse{
+		Success: true,
+		Message: "token berhasil diperbarui",
+		Data:    pair,
+	})
 }
 
 func (s *AuthService) Logout(c *fiber.Ctx) error {
@@ -157,14 +171,20 @@ func (s *AuthService) Logout(c *fiber.Ctx) error {
 	defer cancel()
 
 	var req model.RefreshRequest
+	// Logout tidak membalas 400 jika JSON salah, tapi cukup abaikan penghapusan token.
+	// Jika mau konsisten:
 	if err := c.BodyParser(&req); err != nil {
-		return helper.Fail(c, fiber.StatusBadRequest, "body harus berupa JSON yang valid")
+		return helper.BadRequest("body harus berupa JSON yang valid")
 	}
 
 	if strings.TrimSpace(req.RefreshToken) != "" {
 		_ = s.tokens.Revoke(ctx, helper.SHA256Hex(req.RefreshToken))
 	}
-	return helper.Success(c, fiber.StatusOK, "logout berhasil", nil)
+	return c.Status(fiber.StatusOK).JSON(model.WebResponse{
+		Success: true,
+		Message: "logout berhasil",
+		Data:    nil,
+	})
 }
 
 func (s *AuthService) Me(c *fiber.Ctx) error {
@@ -173,18 +193,21 @@ func (s *AuthService) Me(c *fiber.Ctx) error {
 
 	authUser, ok := helper.CurrentUser(c)
 	if !ok {
-		return helper.Fail(c, fiber.StatusUnauthorized, "belum terautentikasi")
+		return helper.Unauthorized("belum terautentikasi")
 	}
 
 	user, err := s.users.FindByID(ctx, authUser.UserID)
 	if err != nil {
-		return helper.Fail(c, fiber.StatusUnauthorized, "user tidak ditemukan")
+		return helper.Unauthorized("user tidak ditemukan")
 	}
 
-	// DITAMBAHKAN: Mengirimkan daftar permission ke frontend
-	return helper.Success(c, fiber.StatusOK, "profil berhasil diambil", fiber.Map{
-		"user":        user,
-		"permissions": s.perms.PermissionsOf(user.Role),
+	return c.Status(fiber.StatusOK).JSON(model.WebResponse{
+		Success: true,
+		Message: "profil berhasil diambil",
+		Data: fiber.Map{
+			"user":        user,
+			"permissions": s.perms.PermissionsOf(user.Role),
+		},
 	})
 }
 

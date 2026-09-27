@@ -12,25 +12,22 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// POST — semua field wajib (Tambahan tag validate dari Langkah 6)
+// POST — semua field wajib
 type CreateUserRequest struct {
 	Username string `json:"username" validate:"required,min=3,max=30,alphanum"`
 	Email    string `json:"email" validate:"required,email,max=120"`
 	Password string `json:"password" validate:"required,min=8,max=72,nospace"`
 }
 
-// PUT — ganti seluruh isi, jadi field bertipe biasa dan semuanya wajib (Tambahan tag validate dari Langkah 6)
+// PUT — ganti seluruh isi
 type ReplaceUserRequest struct {
 	Username string `json:"username" validate:"required,min=3,max=30,alphanum"`
 	Email    string `json:"email" validate:"required,email,max=120"`
 	IsActive bool   `json:"is_active"`
 }
 
-// PATCH — ubah sebagian, jadi field bertipe pointer supaya bisa dibedakan
-// antara "tidak dikirim" (nil) dan "dikirim bernilai kosong"
+// PATCH — ubah sebagian dengan pointer dan omitnil
 type PatchUserRequest struct {
-	// CATATAN LAPORAN: Di modul ditulis 'Username string'. Itu adalah KESALAHAN DISENGAJA.
-	// Harus tetap '*string' agar tag omitnil berfungsi benar dan tidak menerima string kosong.
 	Username *string `json:"username,omitempty" validate:"omitnil,min=3,max=30,alphanum"`
 	Email    *string `json:"email,omitempty" validate:"omitnil,email,max=120"`
 	IsActive *bool   `json:"is_active,omitempty"`
@@ -41,11 +38,11 @@ type WebResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Data    any    `json:"data,omitempty"`
-	Meta    *Meta  `json:"meta,omitempty"`
+	Meta    any    `json:"meta,omitempty"`
 	Errors  any    `json:"errors,omitempty"`
 }
 
-// BENTUK RESPONSE KEGAGALAN BARU (Tambahan dari Langkah 1)
+// Bentuk response kegagalan
 type ErrorResponse struct {
 	Success   bool              `json:"success"`
 	Code      string            `json:"code"`
@@ -61,6 +58,26 @@ type Meta struct {
 	TotalPages int `json:"total_pages"`
 }
 
+// --- STRUKTUR KURSOR UNTUK LANGKAH 7 ---
+type Cursor struct {
+	CreatedAt time.Time
+	ID        int
+}
+
+type CursorQuery struct {
+	Limit    int
+	Search   string
+	IsActive *bool
+	After    *Cursor
+}
+
+type CursorMeta struct {
+	Limit      int    `json:"limit"`
+	NextCursor string `json:"next_cursor,omitempty"`
+	HasMore    bool   `json:"has_more"`
+}
+// -------------------------------------
+
 type ListQuery struct {
 	Page     int
 	Limit    int
@@ -70,13 +87,10 @@ type ListQuery struct {
 	IsActive *bool
 }
 
-// Offset menghitung berapa baris yang dilewati untuk halaman ini.
 func (q ListQuery) Offset() int {
 	return (q.Page - 1) * q.Limit
 }
 
-// BARU DITAMBAHKAN: AssignRoleRequest dipakai endpoint PATCH /users/:id/role.
-// Saya tambahkan tag validate required agar tidak bisa dikirim kosong.
 type AssignRoleRequest struct {
 	Role string `json:"role" validate:"required"`
 }
